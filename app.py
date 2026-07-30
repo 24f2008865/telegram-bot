@@ -58,6 +58,10 @@ def log_event(run_id: str, event: dict[str, Any]) -> None:
         handle.write(json.dumps({"time": now_iso(), **event}, ensure_ascii=True) + "\n")
 
 
+def safe_error_detail(exc: Exception) -> str:
+    return re.sub(r"([?&]key=)[^&'\\s]+", r"\1REDACTED", str(exc))
+
+
 def public_base_url(request: Request) -> str:
     if PUBLIC_BASE_URL:
         return PUBLIC_BASE_URL
@@ -232,7 +236,7 @@ async def process_message(chat_id: int, text: str, base_url: str) -> None:
         log_event(run_id, {"event": "completed", "answer": answer, "raw_model_output": raw})
     except Exception as exc:  # Keep Telegram replies JSON-only even on transient failures.
         result = {"answer": {"error": "temporary_processing_error"}, "log_url": url}
-        log_event(run_id, {"event": "error", "error": type(exc).__name__, "detail": str(exc)})
+        log_event(run_id, {"event": "error", "error": type(exc).__name__, "detail": safe_error_detail(exc)})
 
     await send_result(chat_id, result)
 
