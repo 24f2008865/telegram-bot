@@ -20,6 +20,7 @@ BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")
 OPENAI_MODEL = os.environ.get("OPENAI_MODEL", "gpt-5-mini")
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
 GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini-1.5-flash")
+GEMINI_BASE_URL = os.environ.get("GEMINI_BASE_URL", "")
 PUBLIC_BASE_URL = os.environ.get("PUBLIC_BASE_URL", "").rstrip("/")
 WEBHOOK_SECRET = os.environ.get("TELEGRAM_WEBHOOK_SECRET", "")
 LOG_DIR = Path(os.environ.get("LOG_DIR", "data/logs"))
@@ -142,7 +143,14 @@ async def ask_gemini(transcript: str) -> tuple[Any, str]:
     if not GEMINI_API_KEY:
         raise RuntimeError("GEMINI_API_KEY is not configured")
 
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/{GEMINI_MODEL}:generateContent"
+    if GEMINI_BASE_URL:
+        base_url = GEMINI_BASE_URL.rstrip("/")
+    elif GEMINI_API_KEY.startswith("AQ."):
+        base_url = "https://aipipe.org/geminiv1beta"
+    else:
+        base_url = "https://generativelanguage.googleapis.com/v1beta"
+
+    url = f"{base_url}/models/{GEMINI_MODEL}:generateContent"
     payload = {
         "systemInstruction": {"parts": [{"text": SYSTEM_PROMPT}]},
         "contents": [{"role": "user", "parts": [{"text": transcript}]}],
@@ -151,10 +159,18 @@ async def ask_gemini(transcript: str) -> tuple[Any, str]:
             "temperature": 0.1,
         },
     }
+    headers = {"Content-Type": "application/json"}
+    params = None
+    if base_url.startswith("https://aipipe.org/"):
+        headers["Authorization"] = f"Bearer {GEMINI_API_KEY}"
+    else:
+        params = {"key": GEMINI_API_KEY}
+
     async with httpx.AsyncClient(timeout=90) as client:
         response = await client.post(
             url,
-            params={"key": GEMINI_API_KEY},
+            params=params,
+            headers=headers,
             json=payload,
         )
         response.raise_for_status()
@@ -185,7 +201,8 @@ async def ask_gemini(transcript: str) -> tuple[Any, str]:
         async with httpx.AsyncClient(timeout=90) as client:
             repair_response = await client.post(
                 url,
-                params={"key": GEMINI_API_KEY},
+                params=params,
+                headers=headers,
                 json=repair_payload,
             )
             repair_response.raise_for_status()

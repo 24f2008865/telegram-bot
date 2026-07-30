@@ -59,7 +59,9 @@ question's two registration fields. The username must end in `bot`.
 If OpenAI API quota is unavailable, set these Render variables instead:
 
 - `GEMINI_API_KEY`: a Google AI Studio API key
-- `GEMINI_MODEL`: `gemini-1.5-flash`
+- `GEMINI_MODEL`: `gemini-2.5-flash-lite`
+- `GEMINI_BASE_URL`: optional. Use `https://aipipe.org/geminiv1beta` for
+  AI Pipe `AQ...` tokens.
 
 When `GEMINI_API_KEY` is present, the service uses Gemini and ignores the OpenAI
 settings for model calls. Keep `TELEGRAM_BOT_TOKEN` and `PUBLIC_BASE_URL`

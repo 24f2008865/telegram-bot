@@ -14,7 +14,9 @@ services:
       - key: GEMINI_API_KEY
         sync: false
       - key: GEMINI_MODEL
-        value: gemini-1.5-flash
+        value: gemini-2.5-flash-lite
+      - key: GEMINI_BASE_URL
+        value: https://aipipe.org/geminiv1beta
       - key: TELEGRAM_BOT_TOKEN
         sync: false
       - key: PUBLIC_BASE_URL
