@@ -18,6 +18,8 @@ app = FastAPI(title="TDS Data Analyst Telegram Bot")
 
 BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")
 OPENAI_MODEL = os.environ.get("OPENAI_MODEL", "gpt-5-mini")
+GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
+GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini-1.5-flash")
 PUBLIC_BASE_URL = os.environ.get("PUBLIC_BASE_URL", "").rstrip("/")
 WEBHOOK_SECRET = os.environ.get("TELEGRAM_WEBHOOK_SECRET", "")
 LOG_DIR = Path(os.environ.get("LOG_DIR", "data/logs"))
@@ -25,6 +27,7 @@ LOG_DIR.mkdir(parents=True, exist_ok=True)
 
 telegram_api = f"https://api.telegram.org/bot{BOT_TOKEN}"
 openai_client = AsyncOpenAI() if os.environ.get("OPENAI_API_KEY") else None
+ACTIVE_MODEL = GEMINI_MODEL if GEMINI_API_KEY else OPENAI_MODEL
 histories: dict[str, deque[str]] = defaultdict(lambda: deque(maxlen=12))
 
 SYSTEM_PROMPT = """
@@ -131,6 +134,70 @@ async def ask_openai(transcript: str) -> tuple[Any, str]:
         return parse_answer(repaired_raw), repaired_raw
 
 
+async def ask_gemini(transcript: str) -> tuple[Any, str]:
+    if not GEMINI_API_KEY:
+        raise RuntimeError("GEMINI_API_KEY is not configured")
+
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/{GEMINI_MODEL}:generateContent"
+    payload = {
+        "systemInstruction": {"parts": [{"text": SYSTEM_PROMPT}]},
+        "contents": [{"role": "user", "parts": [{"text": transcript}]}],
+        "generationConfig": {
+            "responseMimeType": "application/json",
+            "temperature": 0.1,
+        },
+    }
+    async with httpx.AsyncClient(timeout=90) as client:
+        response = await client.post(
+            url,
+            params={"key": GEMINI_API_KEY},
+            json=payload,
+        )
+        response.raise_for_status()
+        body = response.json()
+
+    candidates = body.get("candidates") or []
+    parts = candidates[0].get("content", {}).get("parts", []) if candidates else []
+    raw = "".join(str(part.get("text", "")) for part in parts).strip()
+    if not raw:
+        raise ValueError(f"Gemini returned no text: {body}")
+
+    try:
+        return parse_answer(raw), raw
+    except ValueError:
+        repair_prompt = (
+            "Convert this output into exactly one valid JSON object with one "
+            "top-level key named answer. Return JSON only.\n\n"
+            f"{raw}"
+        )
+        repair_payload = {
+            "systemInstruction": {"parts": [{"text": SYSTEM_PROMPT}]},
+            "contents": [{"role": "user", "parts": [{"text": repair_prompt}]}],
+            "generationConfig": {
+                "responseMimeType": "application/json",
+                "temperature": 0,
+            },
+        }
+        async with httpx.AsyncClient(timeout=90) as client:
+            repair_response = await client.post(
+                url,
+                params={"key": GEMINI_API_KEY},
+                json=repair_payload,
+            )
+            repair_response.raise_for_status()
+            repair_body = repair_response.json()
+        repair_candidates = repair_body.get("candidates") or []
+        repair_parts = repair_candidates[0].get("content", {}).get("parts", []) if repair_candidates else []
+        repaired_raw = "".join(str(part.get("text", "")) for part in repair_parts).strip()
+        return parse_answer(repaired_raw), repaired_raw
+
+
+async def ask_model(transcript: str) -> tuple[Any, str]:
+    if GEMINI_API_KEY:
+        return await ask_gemini(transcript)
+    return await ask_openai(transcript)
+
+
 async def telegram_post(method: str, payload: dict[str, Any]) -> dict[str, Any]:
     if not BOT_TOKEN:
         raise RuntimeError("TELEGRAM_BOT_TOKEN is not configured")
@@ -156,10 +223,10 @@ async def process_message(chat_id: int, text: str, base_url: str) -> None:
     history.append(f"USER: {text}")
     transcript = "\n".join(history)
     url = log_url(base_url, run_id)
-    log_event(run_id, {"event": "received", "chat_id": chat_id, "model": OPENAI_MODEL, "text": text})
+    log_event(run_id, {"event": "received", "chat_id": chat_id, "model": ACTIVE_MODEL, "text": text})
 
     try:
-        answer, raw = await ask_openai(transcript)
+        answer, raw = await ask_model(transcript)
         result = {"answer": answer, "log_url": url}
         history.append(f"ASSISTANT: {json.dumps(answer, ensure_ascii=True)}")
         log_event(run_id, {"event": "completed", "answer": answer, "raw_model_output": raw})

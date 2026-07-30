@@ -1,8 +1,8 @@
 # TDS Project 1 Telegram Data Analyst Bot
 
 This project implements Question 5 from TDS 2026 May Project 1. It receives a
-Telegram text message, gives the complete conversation to an OpenAI model, uses
-web search when public data is needed, and replies with exactly one JSON object:
+Telegram text message, gives the complete conversation to an LLM, and replies
+with exactly one JSON object:
 
 ```json
 {"answer": <value requested by the question>, "log_url": "https://.../logs/<id>.jsonl"}
@@ -53,6 +53,17 @@ python set_webhook.py
 
 The grading pipeline expects the GitHub URL and Telegram username in the
 question's two registration fields. The username must end in `bot`.
+
+## Gemini fallback
+
+If OpenAI API quota is unavailable, set these Render variables instead:
+
+- `GEMINI_API_KEY`: a Google AI Studio API key
+- `GEMINI_MODEL`: `gemini-1.5-flash`
+
+When `GEMINI_API_KEY` is present, the service uses Gemini and ignores the OpenAI
+settings for model calls. Keep `TELEGRAM_BOT_TOKEN` and `PUBLIC_BASE_URL`
+configured the same way.
 
 ## Reliability notes
 
